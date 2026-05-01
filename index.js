@@ -1,9 +1,10 @@
-(function(){'use strict';// SecretLanguage v4.1.0 - Otomatik Başlatma ve Kalıcılık Güncellemesi
-// Bu sürüm Discord her açıldığında modüller yüklenene kadar deneme yapar.
+(function(){'use strict';// SecretLanguage v4.0.0 - m4fn3/SecretMessage Mimarisinde Yeniden Yazıldı
+// Bu sürüm tamamen global window.enmity nesnesini kullanır.
 const X1 = "krd";
 const X2 = "1978";
 // --- YARDIMCI FONKSİYONLAR ---
 const getEnmity = () => window.enmity;
+// Mobil uyumlu en ilkel Base64
 const encodeB64 = (s) => {
     const b64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     let i = 0, a, b, c, out = '';
@@ -36,68 +37,61 @@ const decodeB64 = (s) => {
 };
 const SecretLanguagePlugin = {
     name: 'SecretLanguage',
-    description: 'Gizli Dil (STABLE v4.1.0)',
-    version: '4.1.0',
+    description: 'Gizli Dil (STABLE v4.0.0)',
+    version: '4.0.0',
     authors: [{ name: 'You', id: '0' }],
     onStart() {
-        let attempts = 0;
-        const initInterval = setInterval(() => {
-            attempts++;
-            const enmity = getEnmity();
-            // Enmity ve temel modüller hazır mı kontrol et
-            if (enmity && enmity.metro && enmity.patcher && enmity.modules?.common?.Toasts) {
-                clearInterval(initInterval);
-                this.initializePlugin(enmity);
-            }
-            else if (attempts > 100) { // 50 saniye boyunca denesin
-                clearInterval(initInterval);
-                console.log("SecretLanguage: Enmity bulunamadı.");
-            }
-        }, 500);
-    },
-    initializePlugin(enmity) {
+        const enmity = getEnmity();
+        if (!enmity)
+            return;
         const { metro, patcher, plugins, commands, assets, modules } = enmity;
         const getByProps = metro.getByProps;
         const common = modules.common;
+        common.React;
         const Toasts = common.Toasts;
-        // Ayarları m4fn3 yöntemiyle (kalıcı) kullan
+        // Ayarları Başlat
         const getSetting = (key, def) => plugins.getSettings('SecretLanguage')?.[key] ?? def;
         const setSetting = (key, val) => {
             const current = plugins.getSettings('SecretLanguage') || {};
             plugins.setSettings('SecretLanguage', { ...current, [key]: val });
         };
+        if (plugins.getSettings('SecretLanguage') === undefined) {
+            plugins.setSettings('SecretLanguage', { enabled: false, hijack_gift: true });
+        }
         const p = patcher.create('SecretLanguage');
-        // 1. MESAJ GÖNDERME
+        // 1. MESAJ GÖNDERME YAMASI
         const MessageActions = getByProps('sendMessage');
         if (MessageActions) {
             p.before(MessageActions, 'sendMessage', (_self, args) => {
-                if (getSetting('enabled', false)) {
-                    const [, message] = args;
-                    if (message?.content && !message.content.startsWith(X1)) {
-                        let res = "";
-                        for (let i = 0; i < message.content.length; i++) {
-                            res += String.fromCharCode(message.content.charCodeAt(i) ^ X2.charCodeAt(i % X2.length));
-                        }
-                        message.content = `${X1}${encodeB64(res).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
+                const isEnabled = getSetting('enabled', false);
+                const [, message] = args;
+                if (isEnabled && message?.content && !message.content.startsWith(X1)) {
+                    let res = "";
+                    for (let i = 0; i < message.content.length; i++) {
+                        res += String.fromCharCode(message.content.charCodeAt(i) ^ X2.charCodeAt(i % X2.length));
                     }
+                    message.content = `${X1}${encodeB64(res).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
                 }
             });
         }
-        // 2. HEDİYE BUTONU HIJACK (Daha sağlam kontrol)
+        // 2. HEDİYE BUTONUNU ELE GEÇİRME (UI Injection)
         const TouchableOpacity = getByProps('TouchableOpacity');
         const giftIconId = assets.getIDByName('ic_gift');
         const lockIconId = assets.getIDByName('ic_lock');
         const unlockIconId = assets.getIDByName('ic_show_password');
         if (TouchableOpacity) {
-            p.after(TouchableOpacity.default || TouchableOpacity, 'render', (_self, args, res) => {
+            p.after(TouchableOpacity.default ? TouchableOpacity.default : TouchableOpacity, 'render', (_self, args, res) => {
                 if (!getSetting('hijack_gift', true))
                     return res;
+                // İçindeki ikonu bul
                 try {
                     const children = res.props?.children;
                     const icon = Array.isArray(children) ? children[0] : children;
                     if (icon?.props?.source === giftIconId) {
                         const isEnabled = getSetting('enabled', false);
+                        // İkonu değiştir
                         icon.props.source = isEnabled ? lockIconId : unlockIconId;
+                        // Tıklama olayını değiştir
                         res.props.onPress = () => {
                             const current = getSetting('enabled', false);
                             setSetting('enabled', !current);
@@ -110,11 +104,12 @@ const SecretLanguagePlugin = {
                 return res;
             });
         }
-        // 3. MESAJ ÇEVİRİSİ (Long Press)
+        // 3. MESAJ ÇEVİRİSİ (Long Press Menu)
         const MessageActionSheet = getByProps('MessageActionSheet') || (metro.getBySource && metro.getBySource('MessageActionSheet'));
         if (MessageActionSheet) {
             p.after(MessageActionSheet, 'default', (_self, args, res) => {
-                const message = args[0]?.message;
+                const [props] = args;
+                const message = props?.message;
                 if (message?.content?.startsWith(X1)) {
                     const translateAction = {
                         label: 'Gizli Dili Çevir',
@@ -131,12 +126,14 @@ const SecretLanguagePlugin = {
                             }
                             catch (e) {
                                 if (Toasts)
-                                    Toasts.open({ content: "Hata!" });
+                                    Toasts.open({ content: "Çeviri hatası!" });
                             }
                         }
                     };
-                    if (res?.props?.children?.props?.options)
+                    // Menüye ekle
+                    if (res?.props?.children?.props?.options) {
                         res.props.children.props.options.push(translateAction);
+                    }
                 }
                 return res;
             });
@@ -146,7 +143,8 @@ const SecretLanguagePlugin = {
             commands.registerCommands('SecretLanguage', [{
                     name: 'secret',
                     description: 'Gizli dili aç/kapat',
-                    type: 1, inputType: 1,
+                    type: 1,
+                    inputType: 1,
                     execute: () => {
                         const current = getSetting('enabled', false);
                         setSetting('enabled', !current);
@@ -156,12 +154,13 @@ const SecretLanguagePlugin = {
                 }]);
         }
         if (Toasts)
-            Toasts.open({ content: "SecretLanguage v4.1.0 Aktif!" });
+            Toasts.open({ content: "SecretLanguage v4.0.0 Aktif!" });
     },
     onStop() {
         const enmity = getEnmity();
-        if (enmity?.patcher)
+        if (enmity?.patcher) {
             enmity.patcher.unpatchAll('SecretLanguage');
+        }
     },
     getSettingsPanel({ settings }) {
         const enmity = getEnmity();
@@ -175,17 +174,14 @@ const SecretLanguagePlugin = {
                 const current = enmity.plugins.getSettings('SecretLanguage') || {};
                 enmity.plugins.setSettings('SecretLanguage', { ...current, enabled: v });
             }
-        })));
+        })), React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 } }, React.createElement(Text, { style: { color: '#ffffff', fontSize: 18 } }, "Hediye Butonunu Kullan"), React.createElement(Switch, {
+            value: settings.hijack_gift ?? true,
+            onValueChange: (v) => {
+                const current = enmity.plugins.getSettings('SecretLanguage') || {};
+                enmity.plugins.setSettings('SecretLanguage', { ...current, hijack_gift: v });
+            }
+        })), React.createElement(Text, { style: { color: '#aaaaaa', marginTop: 10 } }, "v4.0.0 - Hediye butonu artık bir anahtar görevi görür."));
     }
 };
-// KESİN KAYIT (Retry ile)
-const register = () => {
-    const enmity = getEnmity();
-    if (enmity?.plugins?.registerPlugin) {
-        enmity.plugins.registerPlugin(SecretLanguagePlugin);
-    }
-    else {
-        setTimeout(register, 1000);
-    }
-};
-register();})();
+// GLOBAL KAYIT
+window.enmity.plugins.registerPlugin(SecretLanguagePlugin);})();

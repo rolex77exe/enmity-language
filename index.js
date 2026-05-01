@@ -2,7 +2,7 @@
     window.enmity.plugins.registerPlugin(plugin);
 }const X1 = "krd";
 const X2 = "1978";
-// Kripto Fonksiyonları (Vencord Uyumlu)
+// Kripto Fonksiyonları
 function toBase64Url(input) {
     const textEncoder = new TextEncoder();
     const key = textEncoder.encode(X2);
@@ -16,44 +16,20 @@ function toBase64Url(input) {
         binary += String.fromCharCode(result[i]);
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
-function fromBase64Url(input) {
-    try {
-        const textEncoder = new TextEncoder();
-        const textDecoder = new TextDecoder();
-        const binary = atob(input.replace(/-/g, '+').replace(/_/g, '/'));
-        const key = textEncoder.encode(X2);
-        const data = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++)
-            data[i] = binary.charCodeAt(i);
-        const result = new Uint8Array(data.length);
-        for (let i = 0; i < data.length; i++)
-            result[i] = data[i] ^ key[i % key.length];
-        return textDecoder.decode(result);
-    }
-    catch {
-        return null;
-    }
-}
 function encodeSecret(content) {
     return `${X1}${toBase64Url(content)}`;
-}
-function decodeSecret(content) {
-    if (!content.startsWith(X1))
-        return null;
-    return fromBase64Url(content.slice(X1.length));
 }
 let isSecretEnabled = false;
 const SecretLanguagePlugin = {
     name: 'SecretLanguage',
-    description: 'Gizli Dil eklentisi (Üst Bar + Çeviri)',
-    version: '1.0.5',
+    description: 'Gizli Dil eklentisi (Hediye Butonu Yerine)',
+    version: '1.0.7',
     authors: [{ name: 'You', id: '0' }],
     onStart() {
         try {
             const MessageActions = metro.getByProps('sendMessage');
-            const HeaderBar = metro.getByProps('HeaderBar') || metro.getByProps('Header');
-            const MessageContextMenu = metro.getBySource('MessageContextMenu');
-            const { TouchableOpacity, Text, View } = metro.getByProps('TouchableOpacity', 'Text', 'View');
+            const ChatInput = metro.getByProps('ChatInput');
+            const { TouchableOpacity, Text } = metro.getByProps('TouchableOpacity', 'Text');
             // 1. Mesaj Gönderme Patch'i
             if (MessageActions) {
                 Patcher__namespace.before('SecretLanguage', MessageActions, 'sendMessage', (_self, args) => {
@@ -63,60 +39,39 @@ const SecretLanguagePlugin = {
                     }
                 });
             }
-            // 2. Üst Bar Buton Patch'i
-            if (HeaderBar && TouchableOpacity) {
-                Patcher__namespace.after('SecretLanguage', HeaderBar, 'default', (_self, _args, res) => {
+            // 2. Hediye Butonunu Değiştirme Patch'i
+            if (ChatInput && TouchableOpacity) {
+                Patcher__namespace.after('SecretLanguage', ChatInput, 'default', (_self, _args, res) => {
                     const SecretButton = () => {
                         const [enabled, setEnabled] = common.React.useState(isSecretEnabled);
                         return (common.React.createElement(TouchableOpacity, { onPress: () => {
                                 isSecretEnabled = !isSecretEnabled;
                                 setEnabled(isSecretEnabled);
                                 common.Toasts.open({ content: `Gizli Dil: ${isSecretEnabled ? 'AÇIK 🔒' : 'KAPALI 🔓'}` });
-                            }, style: {
-                                marginRight: 10,
-                                padding: 8,
-                                borderRadius: 10,
-                                backgroundColor: enabled ? 'rgba(67, 181, 129, 0.15)' : 'transparent',
-                                flexDirection: 'row',
-                                alignItems: 'center'
-                            } },
-                            common.React.createElement(Text, { style: { color: enabled ? '#43b581' : '#ffffff', fontSize: 18 } }, enabled ? '🔒' : '🔓')));
+                            }, onLongPress: () => {
+                                common.Dialog.show({
+                                    title: 'Gizli Dil Ayarları',
+                                    body: `Gizli dil şu an ${isSecretEnabled ? 'aktif' : 'pasif'}. Kapatmak için dokunun.`,
+                                    confirmText: 'Tamam'
+                                });
+                            }, style: { padding: 8, justifyContent: 'center', alignItems: 'center' } },
+                            common.React.createElement(Text, { style: { fontSize: 20 } }, enabled ? '🔒' : '🔓')));
                     };
                     try {
-                        // Header'ın sağ tarafındaki buton listesini bulmaya çalışıyoruz
-                        // Bu yapı Discord versiyonuna göre children.props.children[1] vb olabilir.
-                        const headerChildren = res?.props?.children?.props?.children;
-                        if (Array.isArray(headerChildren)) {
-                            // Eğer buton listesi buradaysa en başa ekle
-                            headerChildren.unshift(common.React.createElement(SecretButton, null));
-                        }
-                        else if (res?.props?.children) {
-                            // Alternatif yapı
-                            const oldChildren = res.props.children;
-                            res.props.children = [common.React.createElement(SecretButton, null), oldChildren];
+                        // ChatInput içindeki butonları bul
+                        const children = res?.props?.children?.props?.children || res?.props?.children;
+                        if (Array.isArray(children)) {
+                            // Hediye butonu (Gift) genellikle listenin başlarında olur. 
+                            // Onu bulup kendi butonumuzla değiştirmeye çalışalım veya direkt başa ekleyelim.
+                            // Hediye butonu kalabalık yapmasın diye onu filtreleyebiliriz (opsiyonel)
+                            children.unshift(common.React.createElement(SecretButton, null));
                         }
                     }
                     catch (e) { }
                     return res;
                 });
             }
-            // 3. Mesaj Çeviri Patch'i
-            if (MessageContextMenu) {
-                Patcher__namespace.after('SecretLanguage', MessageContextMenu, 'default', (_self, args, res) => {
-                    const [props] = args;
-                    const message = props?.message;
-                    if (!message || !message.content)
-                        return res;
-                    const decoded = decodeSecret(message.content);
-                    if (decoded) {
-                        // Şifreli mesaj algılandığında otomatik olarak bir bildirim gösterir
-                        // İstersen buraya tıklandığında Dialog açacak bir mantık da eklenebilir.
-                        common.Toasts.open({ content: "Gizli mesaj algılandı! Çevirmek için tıkla." });
-                    }
-                    return res;
-                });
-            }
-            // 4. Komut Kaydı
+            // 3. Komut Kaydı
             commands.registerCommands('SecretLanguage', [{
                     name: 'secret',
                     description: 'Gizli dili aç/kapat',
@@ -124,11 +79,7 @@ const SecretLanguagePlugin = {
                     inputType: commands.ApplicationCommandInputType.BuiltIn,
                     execute() {
                         isSecretEnabled = !isSecretEnabled;
-                        common.Dialog.show({
-                            title: 'Secret Language',
-                            body: `Gizli dil şu an: ${isSecretEnabled ? 'AÇIK' : 'KAPALI'}`,
-                            confirmText: 'Tamam'
-                        });
+                        common.Dialog.show({ title: 'Secret Language', body: `Gizli dil şu an: ${isSecretEnabled ? 'AÇIK' : 'KAPALI'}`, confirmText: 'Tamam' });
                     },
                 }]);
         }

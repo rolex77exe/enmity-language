@@ -1,5 +1,9 @@
-(function(plugins,common,commands){'use strict';const X1 = "krd";
+(function(){'use strict';// SecretLanguage v4.0.0 - m4fn3/SecretMessage Mimarisinde Yeniden Yazıldı
+// Bu sürüm tamamen global window.enmity nesnesini kullanır.
+const X1 = "krd";
 const X2 = "1978";
+// --- YARDIMCI FONKSİYONLAR ---
+const getEnmity = () => window.enmity;
 // Mobil uyumlu en ilkel Base64
 const encodeB64 = (s) => {
     const b64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -33,35 +37,35 @@ const decodeB64 = (s) => {
 };
 const SecretLanguagePlugin = {
     name: 'SecretLanguage',
-    description: 'Gizli Dil (STABLE v3.5.0)',
-    version: '3.5.0',
+    description: 'Gizli Dil (STABLE v4.0.0)',
+    version: '4.0.0',
     authors: [{ name: 'You', id: '0' }],
     onStart() {
-        let attempts = 0;
-        const interval = setInterval(() => {
-            attempts++;
-            const e = window.enmity;
-            if (e && e.metro && e.patcher) {
-                clearInterval(interval);
-                this.initializePlugin(e);
-            }
-            else if (attempts > 60) { // 30 saniye boyunca denesin
-                clearInterval(interval);
-                console.log("SecretLanguage: Enmity modülleri bulunamadı.");
-            }
-        }, 500);
-    },
-    initializePlugin(e) {
-        const { metro, patcher, plugins, commands: enmityCommands } = e;
-        const toasts = e.modules?.common?.Toasts || e.toasts || metro.getByProps('open', 'close');
-        const { View, Text, TouchableOpacity } = metro.getByProps('View', 'Text', 'TouchableOpacity');
+        const enmity = getEnmity();
+        if (!enmity)
+            return;
+        const { metro, patcher, plugins, commands, assets, modules } = enmity;
+        const getByProps = metro.getByProps;
+        const common = modules.common;
+        common.React;
+        const Toasts = common.Toasts;
+        // Ayarları Başlat
+        const getSetting = (key, def) => plugins.getSettings('SecretLanguage')?.[key] ?? def;
+        const setSetting = (key, val) => {
+            const current = plugins.getSettings('SecretLanguage') || {};
+            plugins.setSettings('SecretLanguage', { ...current, [key]: val });
+        };
+        if (plugins.getSettings('SecretLanguage') === undefined) {
+            plugins.setSettings('SecretLanguage', { enabled: false, hijack_gift: true });
+        }
+        const p = patcher.create('SecretLanguage');
         // 1. MESAJ GÖNDERME YAMASI
-        const MessageActions = metro.getByProps('sendMessage');
+        const MessageActions = getByProps('sendMessage');
         if (MessageActions) {
-            patcher.before('SecretLanguage', MessageActions, 'sendMessage', (_self, args) => {
-                const settings = plugins.getSettings('SecretLanguage') || { enabled: false };
+            p.before(MessageActions, 'sendMessage', (_self, args) => {
+                const isEnabled = getSetting('enabled', false);
                 const [, message] = args;
-                if (settings.enabled && message?.content && !message.content.startsWith(X1)) {
+                if (isEnabled && message?.content && !message.content.startsWith(X1)) {
                     let res = "";
                     for (let i = 0; i < message.content.length; i++) {
                         res += String.fromCharCode(message.content.charCodeAt(i) ^ X2.charCodeAt(i % X2.length));
@@ -70,49 +74,40 @@ const SecretLanguagePlugin = {
                 }
             });
         }
-        // 2. UI ENJEKSİYONU (ChatInput Butonu)
-        // Hediye butonu civarına bir kilit eklemeye çalışalım
-        const ChatInput = metro.getByProps('ChatInput') || metro.getBySource('ChatInput');
-        if (ChatInput && ChatInput.default) {
-            patcher.after('SecretLanguage', ChatInput, 'default', (_self, _args, res) => {
-                const settings = plugins.getSettings('SecretLanguage') || { enabled: false };
-                // Render edilen ağaçta butonları bulup yanına ekleme yapalım
-                // Bu kısım Discord versiyonuna göre çok değişkendir
+        // 2. HEDİYE BUTONUNU ELE GEÇİRME (UI Injection)
+        const TouchableOpacity = getByProps('TouchableOpacity');
+        const giftIconId = assets.getIDByName('ic_gift');
+        const lockIconId = assets.getIDByName('ic_lock');
+        const unlockIconId = assets.getIDByName('ic_show_password');
+        if (TouchableOpacity) {
+            p.after(TouchableOpacity.default ? TouchableOpacity.default : TouchableOpacity, 'render', (_self, args, res) => {
+                if (!getSetting('hijack_gift', true))
+                    return res;
+                // İçindeki ikonu bul
                 try {
-                    const buttons = res?.props?.children?.props?.children;
-                    if (Array.isArray(buttons)) {
-                        buttons.push(common.React.createElement(TouchableOpacity, { onPress: () => {
-                                const current = plugins.getSettings('SecretLanguage')?.enabled ?? false;
-                                plugins.setSettings('SecretLanguage', { enabled: !current });
-                                if (toasts)
-                                    toasts.open({ content: `Gizli Dil: ${!current ? 'AÇIK 🔒' : 'KAPALI 🔓'}` });
-                            }, style: { padding: 10 } },
-                            common.React.createElement(Text, { style: { fontSize: 20 } }, settings.enabled ? '🔒' : '🔓')));
+                    const children = res.props?.children;
+                    const icon = Array.isArray(children) ? children[0] : children;
+                    if (icon?.props?.source === giftIconId) {
+                        const isEnabled = getSetting('enabled', false);
+                        // İkonu değiştir
+                        icon.props.source = isEnabled ? lockIconId : unlockIconId;
+                        // Tıklama olayını değiştir
+                        res.props.onPress = () => {
+                            const current = getSetting('enabled', false);
+                            setSetting('enabled', !current);
+                            if (Toasts)
+                                Toasts.open({ content: `Gizli Dil: ${!current ? 'AÇIK 🔒' : 'KAPALI 🔓'}` });
+                        };
                     }
                 }
-                catch (err) { }
+                catch (e) { }
                 return res;
             });
         }
-        // 3. KOMUT KAYDI
-        if (enmityCommands) {
-            enmityCommands.registerCommands('SecretLanguage', [{
-                    name: 'secret',
-                    description: 'Gizli dili aç/kapat',
-                    type: commands.ApplicationCommandType.Chat,
-                    inputType: commands.ApplicationCommandInputType.BuiltIn,
-                    execute() {
-                        const current = plugins.getSettings('SecretLanguage')?.enabled ?? false;
-                        plugins.setSettings('SecretLanguage', { enabled: !current });
-                        if (toasts)
-                            toasts.open({ content: `Gizli Dil: ${!current ? 'AÇIK 🔒' : 'KAPALI 🔓'}` });
-                    },
-                }]);
-        }
-        // 4. MESAJ ÇEVİRİSİ (Long Press)
-        const MessageActionSheet = metro.getByProps('MessageActionSheet') || metro.getBySource('MessageActionSheet');
+        // 3. MESAJ ÇEVİRİSİ (Long Press Menu)
+        const MessageActionSheet = getByProps('MessageActionSheet') || (metro.getBySource && metro.getBySource('MessageActionSheet'));
         if (MessageActionSheet) {
-            patcher.after('SecretLanguage', MessageActionSheet, 'default', (_self, args, res) => {
+            p.after(MessageActionSheet, 'default', (_self, args, res) => {
                 const [props] = args;
                 const message = props?.message;
                 if (message?.content?.startsWith(X1)) {
@@ -122,19 +117,20 @@ const SecretLanguagePlugin = {
                             try {
                                 const raw = message.content.slice(X1.length).replace(/-/g, '+').replace(/_/g, '/');
                                 const decoded = decodeB64(raw);
-                                let res = "";
+                                let resStr = "";
                                 for (let i = 0; i < decoded.length; i++) {
-                                    res += String.fromCharCode(decoded.charCodeAt(i) ^ X2.charCodeAt(i % X2.length));
+                                    resStr += String.fromCharCode(decoded.charCodeAt(i) ^ X2.charCodeAt(i % X2.length));
                                 }
-                                if (toasts)
-                                    toasts.open({ content: `Çeviri: ${res}` });
+                                if (Toasts)
+                                    Toasts.open({ content: `Çeviri: ${resStr}` });
                             }
                             catch (e) {
-                                if (toasts)
-                                    toasts.open({ content: "Çeviri hatası!" });
+                                if (Toasts)
+                                    Toasts.open({ content: "Çeviri hatası!" });
                             }
                         }
                     };
+                    // Menüye ekle
                     if (res?.props?.children?.props?.options) {
                         res.props.children.props.options.push(translateAction);
                     }
@@ -142,27 +138,50 @@ const SecretLanguagePlugin = {
                 return res;
             });
         }
-        if (toasts)
-            toasts.open({ content: "SecretLanguage v3.5.0 Başarıyla Yüklendi!" });
+        // 4. KOMUTLAR
+        if (commands) {
+            commands.registerCommands('SecretLanguage', [{
+                    name: 'secret',
+                    description: 'Gizli dili aç/kapat',
+                    type: 1,
+                    inputType: 1,
+                    execute: () => {
+                        const current = getSetting('enabled', false);
+                        setSetting('enabled', !current);
+                        if (Toasts)
+                            Toasts.open({ content: `Gizli Dil: ${!current ? 'AÇIK 🔒' : 'KAPALI 🔓'}` });
+                    }
+                }]);
+        }
+        if (Toasts)
+            Toasts.open({ content: "SecretLanguage v4.0.0 Aktif!" });
     },
     onStop() {
-        const e = window.enmity;
-        if (e?.patcher?.unpatchAll)
-            e.patcher.unpatchAll('SecretLanguage');
+        const enmity = getEnmity();
+        if (enmity?.patcher) {
+            enmity.patcher.unpatchAll('SecretLanguage');
+        }
     },
     getSettingsPanel({ settings }) {
-        try {
-            const e = window.enmity;
-            const { View, Text, Switch } = e.metro.getByProps('View', 'Text', 'Switch');
-            return (common.React.createElement(View, { style: { padding: 20 } },
-                common.React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' } },
-                    common.React.createElement(Text, { style: { color: '#ffffff', fontSize: 18 } }, "Eklentiyi Etkinle\u015Ftir"),
-                    common.React.createElement(Switch, { value: settings.enabled ?? false, onValueChange: (v) => e.plugins.setSettings('SecretLanguage', { enabled: v }) })),
-                common.React.createElement(Text, { style: { color: '#aaaaaa', marginTop: 10 } }, "v3.5.0 - Hediye butonu yan\u0131ndaki kilit ile h\u0131zl\u0131ca a\u00E7\u0131p kapatabilirsiniz.")));
-        }
-        catch (e) {
+        const enmity = getEnmity();
+        if (!enmity)
             return null;
-        }
+        const { View, Text, Switch } = enmity.metro.getByProps('View', 'Text', 'Switch');
+        const React = enmity.modules.common.React;
+        return React.createElement(View, { style: { padding: 20 } }, React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' } }, React.createElement(Text, { style: { color: '#ffffff', fontSize: 18 } }, "Eklentiyi Etkinleştir"), React.createElement(Switch, {
+            value: settings.enabled ?? false,
+            onValueChange: (v) => {
+                const current = enmity.plugins.getSettings('SecretLanguage') || {};
+                enmity.plugins.setSettings('SecretLanguage', { ...current, enabled: v });
+            }
+        })), React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 } }, React.createElement(Text, { style: { color: '#ffffff', fontSize: 18 } }, "Hediye Butonunu Kullan"), React.createElement(Switch, {
+            value: settings.hijack_gift ?? true,
+            onValueChange: (v) => {
+                const current = enmity.plugins.getSettings('SecretLanguage') || {};
+                enmity.plugins.setSettings('SecretLanguage', { ...current, hijack_gift: v });
+            }
+        })), React.createElement(Text, { style: { color: '#aaaaaa', marginTop: 10 } }, "v4.0.0 - Hediye butonu artık bir anahtar görevi görür."));
     }
 };
-plugins.registerPlugin(SecretLanguagePlugin);})(enmity.plugins,enmity.modules.common,enmity.commands);
+// GLOBAL KAYIT
+window.enmity.plugins.registerPlugin(SecretLanguagePlugin);})();

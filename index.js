@@ -1,8 +1,5 @@
-(function(common){'use strict';function registerPlugin(plugin) {
-    window.enmity.plugins.registerPlugin(plugin);
-}const X1 = "krd";
+(function(plugins,Patcher,metro,common){'use strict';function _interopNamespace(e){if(e&&e.__esModule)return e;var n=Object.create(null);if(e){Object.keys(e).forEach(function(k){if(k!=='default'){var d=Object.getOwnPropertyDescriptor(e,k);Object.defineProperty(n,k,d.get?d:{enumerable:true,get:function(){return e[k]}});}})}n["default"]=e;return Object.freeze(n)}var Patcher__namespace=/*#__PURE__*/_interopNamespace(Patcher);const X1 = "krd";
 const X2 = "1978";
-// Kripto Fonksiyonu
 function encodeSecret(input) {
     const textEncoder = new TextEncoder();
     const key = textEncoder.encode(X2);
@@ -15,58 +12,36 @@ function encodeSecret(input) {
         binary += String.fromCharCode(result[i]);
     return `${X1}${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}`;
 }
-// Güvenli Modül Bulucu (Hata almayı engeller)
-const getEnmityModule = (name) => {
-    const e = window.enmity;
-    return e?.[name] || e?.modules?.[name] || e?.api?.[name];
-};
 const SecretLanguagePlugin = {
-    name: 'SecretLanguage',
-    description: 'Gizli Dil (Vencord Uyumlu - Kararlı Sürüm)',
-    version: '1.4.0',
+    name: 'EnmitySecret',
+    description: 'Gizli Dil (En Stabil Sürüm)',
+    version: '2.0.0',
     authors: [{ name: 'You', id: '0' }],
     onStart() {
-        // Discord'un kendine gelmesi için kısa bir bekleme
-        setTimeout(() => {
-            try {
-                const metro = getEnmityModule('metro');
-                const patcher = getEnmityModule('patcher');
-                const commands = getEnmityModule('commands');
-                if (!metro || !patcher) {
-                    common.Toasts.open({ content: "HATA: Enmity modülleri bulunamadı!" });
-                    return;
-                }
-                const MessageActions = metro.getByProps('sendMessage');
-                if (MessageActions) {
-                    patcher.before('SecretLanguage', MessageActions, 'sendMessage', (_self, args) => {
-                        const [, message] = args;
-                        if (message && message.content && !message.content.startsWith(X1)) {
-                            message.content = encodeSecret(message.content);
-                        }
-                    });
-                    common.Toasts.open({ content: "SecretLanguage AKTİF! (Mesajlar şifreleniyor)" });
-                }
-                // Komut Kaydı
-                if (commands) {
-                    commands.registerCommands('SecretLanguage', [{
-                            name: 'secret',
-                            description: 'Gizli dili test et',
-                            execute: () => {
-                                common.Toasts.open({ content: "Eklenti çalışıyor!" });
-                            }
-                        }]);
+        try {
+            const MessageActions = metro.getByProps('sendMessage');
+            if (MessageActions) {
+                Patcher__namespace.before('EnmitySecret', MessageActions, 'sendMessage', (_self, args) => {
+                    const [, message] = args;
+                    if (message && message.content && !message.content.startsWith(X1)) {
+                        message.content = encodeSecret(message.content);
+                    }
+                });
+                // Başlangıç bildirimi
+                if (common.Toasts && common.Toasts.open) {
+                    common.Toasts.open({ content: "Gizli Dil Aktif!" });
                 }
             }
-            catch (err) {
-                common.Toasts.open({ content: "HATA: " + err });
+            else {
+                console.log("EnmitySecret: MessageActions bulunamadı");
             }
-        }, 1500);
+        }
+        catch (err) {
+            console.error("EnmitySecret Hata:", err);
+        }
     },
     onStop() {
-        const patcher = getEnmityModule('patcher');
-        if (patcher && patcher.unpatchAll) {
-            patcher.unpatchAll('SecretLanguage');
-        }
+        Patcher__namespace.unpatchAll('EnmitySecret');
     }
 };
-registerPlugin(SecretLanguagePlugin);})(enmity.modules.common);
+plugins.registerPlugin(SecretLanguagePlugin);})(enmity.plugins,enmity.patcher,enmity.metro,enmity.modules.common);
